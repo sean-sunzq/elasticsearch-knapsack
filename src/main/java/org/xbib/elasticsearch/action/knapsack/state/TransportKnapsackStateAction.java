@@ -16,13 +16,16 @@
 package org.xbib.elasticsearch.action.knapsack.state;
 
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.TransportAction;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.TransportService;
 import org.xbib.elasticsearch.knapsack.KnapsackService;
 import org.xbib.elasticsearch.knapsack.KnapsackState;
 
@@ -30,14 +33,15 @@ public class TransportKnapsackStateAction extends TransportAction<KnapsackStateR
 
     private final static ESLogger logger = ESLoggerFactory.getLogger(KnapsackStateAction.class.getSimpleName());
 
-    private final Client client;
-
     private final KnapsackService knapsack;
 
     @Inject
-    public TransportKnapsackStateAction(Settings settings, ThreadPool threadPool, Client client, KnapsackService knapsack) {
-        super(settings, KnapsackStateAction.NAME, threadPool);
-        this.client = client;
+    public TransportKnapsackStateAction(Settings settings,
+                                        ThreadPool threadPool, ActionFilters actionFilters,
+                                        IndexNameExpressionResolver indexNameExpressionResolver,
+                                        TransportService transportService,
+                                        KnapsackService knapsack) {
+        super(settings, KnapsackStateAction.NAME, threadPool, actionFilters, indexNameExpressionResolver, transportService.getTaskManager());
         this.knapsack = knapsack;
     }
 
@@ -45,11 +49,13 @@ public class TransportKnapsackStateAction extends TransportAction<KnapsackStateR
     protected void doExecute(final KnapsackStateRequest request, ActionListener<KnapsackStateResponse> listener) {
         final KnapsackStateResponse response = new KnapsackStateResponse();
         try {
-            for (KnapsackState state : knapsack.getExports(client)) {
-                response.addState(state);
-            }
-            for (KnapsackState state : knapsack.getImports(client)) {
-                response.addState(state);
+            if (knapsack != null) {
+                for (KnapsackState state : knapsack.getExports()) {
+                    response.addState(state);
+                }
+                for (KnapsackState state : knapsack.getImports()) {
+                    response.addState(state);
+                }
             }
             listener.onResponse(response);
         } catch (Throwable e) {

@@ -15,10 +15,9 @@
  */
 package org.xbib.elasticsearch.action.knapsack.exp;
 
-import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.ActionRequestBuilder;
 import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.support.single.custom.SingleCustomOperationRequestBuilder;
-import org.elasticsearch.client.IndicesAdminClient;
+import org.elasticsearch.client.ElasticsearchClient;
 import org.elasticsearch.common.unit.ByteSizeValue;
 
 import java.nio.file.Path;
@@ -27,14 +26,14 @@ import java.util.Map;
 /**
  * Build request for knapsack export action
  */
-public class KnapsackExportRequestBuilder extends SingleCustomOperationRequestBuilder<KnapsackExportRequest, KnapsackExportResponse, KnapsackExportRequestBuilder> {
+public class KnapsackExportRequestBuilder extends ActionRequestBuilder<KnapsackExportRequest, KnapsackExportResponse, KnapsackExportRequestBuilder> {
 
-    public KnapsackExportRequestBuilder(IndicesAdminClient client) {
-        super(client, new KnapsackExportRequest());
+    public KnapsackExportRequestBuilder(ElasticsearchClient client) {
+        super(client, KnapsackExportAction.INSTANCE, new KnapsackExportRequest());
     }
 
-    public KnapsackExportRequestBuilder setPath(Path path) {
-        request.setPath(path);
+    public KnapsackExportRequestBuilder setArchivePath(Path archivePath) {
+        request.setArchivePath(archivePath);
         return this;
     }
 
@@ -58,23 +57,8 @@ public class KnapsackExportRequestBuilder extends SingleCustomOperationRequestBu
         return this;
     }
 
-    public KnapsackExportRequestBuilder withMetadata(boolean withMetadata) {
-        request.withMetadata(withMetadata);
-        return this;
-    }
-
     public KnapsackExportRequestBuilder setSearchRequest(SearchRequest searchRequest) {
         request.setSearchRequest(searchRequest);
-        return this;
-    }
-
-    public KnapsackExportRequestBuilder setOverwriteAllowed(boolean overwrite) {
-        request.setOverwriteAllowed(overwrite);
-        return this;
-    }
-
-    public KnapsackExportRequestBuilder withEncodedEntry(boolean encodeEntry) {
-        request.setEncodeEntry(encodeEntry);
         return this;
     }
 
@@ -83,8 +67,18 @@ public class KnapsackExportRequestBuilder extends SingleCustomOperationRequestBu
         return this;
     }
 
-    @Override
-    protected void doExecute(ActionListener<KnapsackExportResponse> listener) {
-        client.execute(KnapsackExportAction.INSTANCE, request, listener);
+    public KnapsackExportRequestBuilder withMetadata(boolean withMetadata) {
+        request.withMetadata(withMetadata);
+        return this;
+    }
+
+    public KnapsackExportRequestBuilder setOverwriteAllowed(boolean overwrite) {
+        request.setOverwriteAllowed(overwrite);
+        return this;
+    }
+
+    public KnapsackExportRequestBuilder withAliases(boolean withAliases) {
+        request.withAliases(withAliases);
+        return this;
     }
 }

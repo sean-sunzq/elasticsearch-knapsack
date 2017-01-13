@@ -1,37 +1,22 @@
-/*
- * Copyright (C) 2014 Jörg Prante
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package org.xbib.io.archive.tar;
 
 /**
  * This interface contains all the definitions used in the package.
- * <p/>
  * For tar formats (FORMAT_OLDGNU, FORMAT_POSIX, etc.) see GNU tar
  * <I>tar.h</I> type <I>enum archive_format</I>
  */
 public interface TarConstants {
 
-    /**
-     * GNU format as per before tar 1.12.
-     */
-    int FORMAT_OLDGNU = 2;
+    int GNU_FORMAT = 0;
+
+    int USTAR_FORMAT = 1;
+
+    int UNIX_FORMAT = 2;
 
     /**
      * Pure Posix format.
      */
-    int FORMAT_POSIX = 3;
+    int POSIX_FORMAT = 3;
 
     /**
      * The length of the name field in a header buffer.
@@ -160,16 +145,6 @@ public interface TarConstants {
     int REALSIZELEN_GNU = 12;
 
     /**
-     * The sum of the length of all sparse headers in a sparse header buffer.
-     */
-    int SPARSELEN_GNU_SPARSE = 504;
-
-    /**
-     * The length of the is extension field in a sparse header buffer.
-     */
-    int ISEXTENDEDLEN_GNU_SPARSE = 1;
-
-    /**
      * LF_ constants represent the "link flag" of an entry, or more commonly,
      * the "entry type". This is the "old way" of indicating a normal file.
      */
@@ -241,6 +216,8 @@ public interface TarConstants {
      * Identifies the entry as a Pax global extended header.
      */
     byte LF_PAX_GLOBAL_EXTENDED_HEADER = (byte) 'g';
+
+    String MAGIC_UNIX = "\0\0\0\0\0";
 
     /**
      * The magic tag representing a POSIX tar archive.
@@ -318,4 +295,5 @@ public interface TarConstants {
      */
     int DEFAULT_BLOCK_SIZE = DEFAULT_RECORD_SIZE * 20;
 
+    int SMALL_BUFFER_SIZE = 256;
 }

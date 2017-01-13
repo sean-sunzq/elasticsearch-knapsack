@@ -15,8 +15,9 @@
  */
 package org.xbib.elasticsearch.action.knapsack.imp;
 
+import org.elasticsearch.action.ActionRequest;
+import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.support.single.custom.SingleCustomOperationRequest;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.unit.ByteSizeValue;
@@ -27,14 +28,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Map;
 
-import static org.elasticsearch.common.collect.Maps.newHashMap;
+public class KnapsackImportRequest extends ActionRequest<KnapsackImportRequest>
+        implements KnapsackRequest {
 
-public class KnapsackImportRequest extends SingleCustomOperationRequest<KnapsackImportRequest>
-    implements KnapsackRequest {
-
-    private Path path;
+    private Path archivePath;
 
     private String host;
 
@@ -50,9 +50,9 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
 
     private int maxBulkConcurrency = 2 * Runtime.getRuntime().availableProcessors();
 
-    private Map indexTypeNames = newHashMap();
+    private Map<String, Object> indexTypeNames = new HashMap<>();
 
-    private Map indexTypeDefinitions = newHashMap();
+    private Map<String,Object> indexTypeDefinitions = new HashMap<>();
 
     private String index = "_all";
 
@@ -62,9 +62,7 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
 
     private boolean withMetadata;
 
-    private boolean decodeEntry;
-
-    private ByteSizeValue bytesToTransfer = ByteSizeValue.parseBytesSizeValue("0");
+    private ByteSizeValue bytesToTransfer = ByteSizeValue.parseBytesSizeValue("0", "");
 
     public KnapsackImportRequest setHost(String host) {
         this.host = host;
@@ -147,7 +145,7 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
         return maxBulkConcurrency;
     }
 
-    public KnapsackImportRequest setIndexTypeNames(Map indexTypeNames) {
+    public KnapsackImportRequest setIndexTypeNames(Map<String, Object> indexTypeNames) {
         this.indexTypeNames = indexTypeNames;
         return this;
     }
@@ -200,22 +198,13 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
         return withMetadata;
     }
 
-    public KnapsackImportRequest setPath(Path path) {
-        this.path = path;
+    public KnapsackImportRequest setArchivePath(Path archivePath) {
+        this.archivePath = archivePath;
         return this;
     }
 
-    public Path getPath() {
-        return path;
-    }
-
-    public KnapsackImportRequest setDecodeEntry(boolean decodeEntry) {
-        this.decodeEntry = decodeEntry;
-        return this;
-    }
-
-    public boolean isDecodeEntry() {
-        return decodeEntry;
+    public Path getArchivePath() {
+        return archivePath;
     }
 
     public KnapsackImportRequest setBytesToTransfer(ByteSizeValue bytesToTransfer) {
@@ -230,7 +219,7 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeString(path.toUri().toString());
+        out.writeString(archivePath.toUri().toString());
         out.writeString(host);
         out.writeInt(port);
         out.writeString(cluster);
@@ -246,7 +235,6 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
         out.writeMap(indexTypeDefinitions);
         out.writeMap(indexTypeNames);
         out.writeBoolean(withMetadata);
-        out.writeBoolean(decodeEntry);
         out.writeString(index);
         out.writeString(type);
         if (searchRequest != null) {
@@ -259,9 +247,14 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
     }
 
     @Override
+    public ActionRequestValidationException validate() {
+        return null;
+    }
+
+    @Override
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
-        path = Paths.get(URI.create(in.readString()));
+        archivePath = Paths.get(URI.create(in.readString()));
         host = in.readString();
         port = in.readInt();
         cluster = in.readString();
@@ -274,7 +267,6 @@ public class KnapsackImportRequest extends SingleCustomOperationRequest<Knapsack
         indexTypeDefinitions = in.readMap();
         indexTypeNames = in.readMap();
         withMetadata = in.readBoolean();
-        decodeEntry = in.readBoolean();
         index = in.readString();
         type = in.readString();
         if (in.readBoolean()) {

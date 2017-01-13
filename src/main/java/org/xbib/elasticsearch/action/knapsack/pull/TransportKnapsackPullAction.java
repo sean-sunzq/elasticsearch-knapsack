@@ -16,43 +16,48 @@
 package org.xbib.elasticsearch.action.knapsack.pull;
 
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.admin.indices.alias.IndicesAliasesAction;
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequestBuilder;
+import org.elasticsearch.action.admin.indices.create.CreateIndexAction;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.search.SearchAction;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.search.SearchType;
+import org.elasticsearch.action.search.SearchScrollAction;
+import org.elasticsearch.action.search.SearchScrollRequest;
+import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.TransportAction;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.collect.ImmutableSet;
 import org.elasticsearch.common.inject.Inject;
-import org.elasticsearch.common.joda.time.DateTime;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.env.Environment;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.node.service.NodeService;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.TransportService;
+import org.joda.time.DateTime;
+import org.xbib.elasticsearch.helper.client.BulkNodeClient;
+import org.xbib.elasticsearch.helper.client.BulkTransportClient;
+import org.xbib.elasticsearch.helper.client.ClientBuilder;
 import org.xbib.elasticsearch.knapsack.KnapsackService;
 import org.xbib.elasticsearch.knapsack.KnapsackState;
-import org.xbib.elasticsearch.support.client.Ingest;
-import org.xbib.elasticsearch.support.client.bulk.BulkTransportClient;
-import org.xbib.elasticsearch.support.client.node.BulkNodeClient;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
 import static org.elasticsearch.client.Requests.createIndexRequest;
-import static org.elasticsearch.common.collect.Maps.newHashMap;
-import static org.elasticsearch.common.collect.Sets.newHashSet;
 import static org.xbib.elasticsearch.knapsack.KnapsackHelper.clientSettings;
 import static org.xbib.elasticsearch.knapsack.KnapsackHelper.getAliases;
 import static org.xbib.elasticsearch.knapsack.KnapsackHelper.getMapping;
@@ -64,10 +69,6 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
 
     private final static ESLogger logger = ESLoggerFactory.getLogger(KnapsackPullAction.class.getSimpleName());
 
-    private final Environment environment;
-
-    private final SettingsFilter settingsFilter;
-
     private final Client client;
 
     private final NodeService nodeService;
@@ -75,12 +76,12 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
     private final KnapsackService knapsack;
 
     @Inject
-    public TransportKnapsackPullAction(Settings settings, Environment environment, SettingsFilter settingsFilter,
-                                       ThreadPool threadPool,
-                                       Client client, NodeService nodeService, KnapsackService knapsack) {
-        super(settings, KnapsackPullAction.NAME, threadPool);
-        this.environment = environment;
-        this.settingsFilter = settingsFilter;
+    public TransportKnapsackPullAction(Settings settings, ThreadPool threadPool,
+                                       Client client, NodeService nodeService, ActionFilters actionFilters,
+                                       IndexNameExpressionResolver indexNameExpressionResolver,
+                                       TransportService transportService,
+                                       KnapsackService knapsack) {
+        super(settings, KnapsackPullAction.NAME, threadPool, actionFilters, indexNameExpressionResolver, transportService.getTaskManager());
         this.client = client;
         this.nodeService = nodeService;
         this.knapsack = knapsack;
@@ -94,28 +95,24 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
         final KnapsackPullResponse response = new KnapsackPullResponse()
                 .setState(state);
         try {
-            final BulkTransportClient transportClient = new BulkTransportClient();
-            transportClient.flushIngestInterval(TimeValue.timeValueSeconds(5))
-                    .maxActionsPerBulkRequest(request.getMaxActionsPerBulkRequest())
-                    .maxConcurrentBulkRequests(request.getMaxBulkConcurrency())
-                    .newClient(clientSettings(client, environment, request));
-            if (transportClient.getConnectedNodes().isEmpty()) {
-                response.setRunning(false);
-                transportClient.shutdown();
-            } else {
-                final BulkNodeClient nodeClient = new BulkNodeClient();
-                nodeClient.flushIngestInterval(TimeValue.timeValueSeconds(5))
-                        .maxActionsPerBulkRequest(request.getMaxActionsPerBulkRequest())
-                        .maxConcurrentBulkRequests(request.getMaxBulkConcurrency())
-                        .newClient(client);
-                state.setTimestamp(new DateTime());
-                response.setRunning(true);
-                knapsack.submit(new Thread() {
-                    public void run() {
-                        performPull(request, state, transportClient, nodeClient);
-                    }
-                });
-            }
+            final BulkTransportClient transportClient = ClientBuilder.builder()
+                    .put(ClientBuilder.MAX_ACTIONS_PER_REQUEST, request.getMaxActionsPerBulkRequest())
+                    .put(ClientBuilder.MAX_CONCURRENT_REQUESTS, request.getMaxBulkConcurrency())
+                    .put(ClientBuilder.FLUSH_INTERVAL, TimeValue.timeValueSeconds(5))
+                    .put(clientSettings(client, request))
+                    .toBulkTransportClient();
+            final BulkNodeClient nodeClient = ClientBuilder.builder()
+                    .put(ClientBuilder.MAX_ACTIONS_PER_REQUEST, request.getMaxActionsPerBulkRequest())
+                    .put(ClientBuilder.MAX_CONCURRENT_REQUESTS, request.getMaxBulkConcurrency())
+                    .put(ClientBuilder.FLUSH_INTERVAL, TimeValue.timeValueSeconds(5))
+                    .toBulkNodeClient(client);
+            state.setTimestamp(new DateTime());
+            response.setRunning(true);
+            knapsack.submit(new Thread() {
+                public void run() {
+                    performPull(request, state, transportClient, nodeClient);
+                }
+            });
             listener.onResponse(response);
         } catch (Throwable e) {
             logger.error(e.getMessage(), e);
@@ -126,19 +123,19 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
     /**
      * Pull action thread
      *
-     * @param request request
-     * @param state state
+     * @param request         request
+     * @param state           state
      * @param transportClient bulk client for remote cluster access
-     * @param nodeClient bulk client for local cluster access
+     * @param nodeClient      bulk client for local cluster access
      */
     final void performPull(final KnapsackPullRequest request,
-                            final KnapsackState state,
-                            final Ingest transportClient,
-                            final Ingest nodeClient) {
+                           final KnapsackState state,
+                           final BulkTransportClient transportClient,
+                           final BulkNodeClient nodeClient) {
         try {
             logger.info("start of pull: {}", state);
             long count = 0L;
-            Map<String,Set<String>> indices = newHashMap();
+            Map<String, Set<String>> indices = new HashMap<>();
             for (String s : Strings.commaDelimitedListToSet(request.getIndex())) {
                 indices.put(s, Strings.commaDelimitedListToSet(request.getType()));
             }
@@ -155,7 +152,7 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
                         if (!"_all".equals(index)) {
                             Set<String> types = indices.get(index);
                             if (types == null) {
-                                types = newHashSet();
+                                types = new HashSet<>();
                             }
                             if (type != null) {
                                 types.add(type);
@@ -166,9 +163,9 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
                 }
                 // get settings for all indices
                 logger.info("getting settings for indices {}", indices.keySet());
-                Set<String> settingsIndices = newHashSet(indices.keySet());
+                Set<String> settingsIndices = new HashSet<>(indices.keySet());
                 settingsIndices.remove("_all");
-                Map<String, String> settings = getSettings(transportClient.client(), settingsFilter,
+                Map<String, String> settings = getSettings(transportClient.client(),
                         settingsIndices.toArray(new String[settingsIndices.size()]));
                 logger.info("found indices: {}", settings.keySet());
                 // we resolved the specs in indices to the real indices in the settings
@@ -179,7 +176,7 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
                     createIndexRequest.settings(settings.get(index));
                     logger.info("getting mappings for index {} and types {}", index, types);
                     Map<String, String> mappings = getMapping(transportClient.client(),
-                            index, types != null ? ImmutableSet.copyOf(types) : null);
+                            index, types != null ? new HashSet<>(types) : null);
                     logger.info("found mappings: {}", mappings.keySet());
                     for (String type : mappings.keySet()) {
                         logger.info("adding mapping: {}", mapType(request, index, type));
@@ -187,13 +184,13 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
                     }
                     // create index
                     logger.info("creating index: {}", mapIndex(request, index));
-                    nodeClient.client().admin().indices().create(createIndexRequest).actionGet();
+                    nodeClient.client().execute(CreateIndexAction.INSTANCE, createIndexRequest).actionGet();
                     logger.info("index created: {}", mapIndex(request, index));
                     logger.info("getting aliases for index {}", index);
-                    Map<String,String> aliases = getAliases(client, index);
+                    Map<String, String> aliases = getAliases(client, index);
                     logger.info("found {} aliases", aliases.size());
                     if (!aliases.isEmpty()) {
-                        IndicesAliasesRequestBuilder requestBuilder = nodeClient.client().admin().indices().prepareAliases();
+                        IndicesAliasesRequestBuilder requestBuilder = new IndicesAliasesRequestBuilder(nodeClient.client(), IndicesAliasesAction.INSTANCE);
                         for (String alias : aliases.keySet()) {
                             if (aliases.get(alias).isEmpty()) {
                                 requestBuilder.addAlias(index, alias);
@@ -208,11 +205,11 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
             }
             SearchRequest searchRequest = request.getSearchRequest();
             if (searchRequest == null) {
-                searchRequest = new SearchRequestBuilder(transportClient.client())
-                        .setQuery(QueryBuilders.matchAllQuery()).request();
+                searchRequest = new SearchRequestBuilder(transportClient.client(), SearchAction.INSTANCE)
+                        .setQuery(QueryBuilders.matchAllQuery()).addSort(SortBuilders.fieldSort("_doc")).request();
             }
+            long total = 0L;
             for (String index : indices.keySet()) {
-                searchRequest.searchType(SearchType.SCAN).scroll(request.getTimeout());
                 if (!"_all".equals(index)) {
                     searchRequest.indices(index);
                 }
@@ -220,44 +217,42 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
                 if (types != null) {
                     searchRequest.types(types.toArray(new String[types.size()]));
                 }
-                SearchResponse searchResponse = transportClient.client().search(searchRequest).actionGet();
-                long total = 0L;
-                while (searchResponse.getScrollId() != null && !Thread.interrupted()) {
-                    searchResponse = transportClient.client().prepareSearchScroll(searchResponse.getScrollId())
-                            .setScroll(request.getTimeout())
-                            .execute().actionGet();
-                    long hits = searchResponse.getHits().getHits().length;
-                    if (hits == 0) {
-                        break;
-                    }
-                    total += hits;
-                    logger.debug("total={} hits={} took={}", total, hits, searchResponse.getTookInMillis());
+                searchRequest.scroll(request.getTimeout());
+                SearchResponse searchResponse = transportClient.client()
+                        .execute(SearchAction.INSTANCE, searchRequest).actionGet();
+                do {
+                    total += searchResponse.getHits().getHits().length;
+                    logger.debug("total={} hits={} took={}", total,
+                            searchResponse.getHits().getHits().length,
+                            searchResponse.getTookInMillis());
                     for (SearchHit hit : searchResponse.getHits()) {
                         indexSearchHit(nodeClient, request, hit);
                         count++;
                     }
-                }
+                    searchResponse =  transportClient.client().execute(SearchScrollAction.INSTANCE,
+                            new SearchScrollRequest(searchResponse.getScrollId()).scroll(request.getTimeout())).actionGet();
+                } while (searchResponse.getHits().getHits().length > 0 && !Thread.interrupted());
             }
             nodeClient.flushIngest();
             nodeClient.waitForResponses(TimeValue.timeValueSeconds(60));
             for (String index : indices.keySet()) {
-                nodeClient.refresh(index);
+                nodeClient.refreshIndex(index);
             }
             nodeClient.shutdown();
             transportClient.shutdown();
-            logger.info("end of pull: {}, count = {}", state, count);
+            logger.info("end of pull: {}, docs = {}, count = {}", state, total, count);
         } catch (Throwable e) {
             logger.error(e.getMessage(), e);
         } finally {
             try {
-                knapsack.removeImport(client, state);
+                knapsack.removeImport(state);
             } catch (IOException e) {
                 logger.error(e.getMessage(), e);
             }
         }
     }
 
-    private void indexSearchHit(Ingest nodeBulkClient,  KnapsackPullRequest request, SearchHit hit)
+    private void indexSearchHit(BulkNodeClient bulkNodeClient, KnapsackPullRequest request, SearchHit hit)
             throws IOException {
         IndexRequest indexRequest = new IndexRequest(mapIndex(request, hit.getIndex()),
                 mapType(request, hit.getIndex(), hit.getType()), hit.getId());
@@ -287,8 +282,7 @@ public class TransportKnapsackPullAction extends TransportAction<KnapsackPullReq
         if (!hit.getFields().keySet().contains("_source")) {
             indexRequest.source(hit.getSourceAsString());
         }
-        nodeBulkClient.bulkIndex(indexRequest);
+        bulkNodeClient.bulkIndex(indexRequest);
     }
-
 
 }

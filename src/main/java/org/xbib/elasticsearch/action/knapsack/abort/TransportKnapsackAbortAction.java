@@ -16,12 +16,15 @@
 package org.xbib.elasticsearch.action.knapsack.abort;
 
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.support.ActionFilters;
 import org.elasticsearch.action.support.TransportAction;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.TransportService;
 import org.xbib.elasticsearch.knapsack.KnapsackService;
 
 public class TransportKnapsackAbortAction extends TransportAction<KnapsackAbortRequest, KnapsackAbortResponse> {
@@ -31,8 +34,11 @@ public class TransportKnapsackAbortAction extends TransportAction<KnapsackAbortR
     private final KnapsackService knapsack;
 
     @Inject
-    public TransportKnapsackAbortAction(Settings settings, ThreadPool threadPool, KnapsackService knapsack) {
-        super(settings, KnapsackAbortAction.NAME, threadPool);
+    public TransportKnapsackAbortAction(Settings settings, TransportService transportService,
+                                        ThreadPool threadPool, ActionFilters actionFilters,
+                                        IndexNameExpressionResolver indexNameExpressionResolver,
+                                        KnapsackService knapsack) {
+        super(settings, KnapsackAbortAction.NAME, threadPool, actionFilters, indexNameExpressionResolver, transportService.getTaskManager());
         this.knapsack = knapsack;
     }
 
@@ -40,8 +46,7 @@ public class TransportKnapsackAbortAction extends TransportAction<KnapsackAbortR
     protected void doExecute(final KnapsackAbortRequest request, ActionListener<KnapsackAbortResponse> listener) {
         final KnapsackAbortResponse response = new KnapsackAbortResponse();
         try {
-            int aborted = knapsack.abort();
-            response.setAbortedTasks(aborted);
+            knapsack.abort(request.getReset());
             listener.onResponse(response);
         } catch (Throwable e) {
             logger.error(e.getMessage(), e);

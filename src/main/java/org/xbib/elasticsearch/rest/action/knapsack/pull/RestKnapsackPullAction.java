@@ -48,7 +48,7 @@ public class RestKnapsackPullAction extends BaseRestHandler implements KnapsackP
 
     @Inject
     public RestKnapsackPullAction(Settings settings, Client client, RestController controller) {
-        super(settings, client);
+        super(settings, controller, client);
 
         controller.registerHandler(POST, "/_pull", this);
         controller.registerHandler(POST, "/{index}/_pull", this);
@@ -75,7 +75,7 @@ public class RestKnapsackPullAction extends BaseRestHandler implements KnapsackP
                     .setIndexTypeNames(KnapsackHelper.toMap(request.param(MAP_PARAM), logger))
                     .setSearchRequest(toSearchRequest(request));
             // add user-defined settings and mappings
-            for (Map.Entry<String,String> e : request.params().entrySet()) {
+            for (Map.Entry<String, String> e : request.params().entrySet()) {
                 if (e.getKey().endsWith("_settings")) {
                     pullRequest.addIndexSettings(e.getKey(), e.getValue());
                 } else if (e.getKey().endsWith("_mapping")) {
@@ -95,11 +95,10 @@ public class RestKnapsackPullAction extends BaseRestHandler implements KnapsackP
     }
 
     private SearchRequest toSearchRequest(RestRequest request) {
-        SearchRequest searchRequest;
         // override search action "size" (default = 10) by bulk request size. The size is per shard!
         request.params().put("size", request.param(MAX_BULK_ACTIONS_PER_REQUEST_PARAM, "1000"));
-        searchRequest = RestSearchAction.parseSearchRequest(request);
-        searchRequest.listenerThreaded(false);
+        SearchRequest searchRequest = new SearchRequest();
+        RestSearchAction.parseSearchRequest(searchRequest, request, parseFieldMatcher, null);
         return searchRequest;
     }
 }

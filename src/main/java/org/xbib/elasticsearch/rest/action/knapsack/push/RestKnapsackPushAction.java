@@ -47,7 +47,7 @@ public class RestKnapsackPushAction extends BaseRestHandler implements KnapsackP
 
     @Inject
     public RestKnapsackPushAction(Settings settings, Client client, RestController controller) {
-        super(settings, client);
+        super(settings, controller, client);
 
         controller.registerHandler(POST, "/_push", this);
         controller.registerHandler(POST, "/{index}/_push", this);
@@ -87,11 +87,12 @@ public class RestKnapsackPushAction extends BaseRestHandler implements KnapsackP
     }
 
     private SearchRequest toSearchRequest(RestRequest request) {
-        SearchRequest searchRequest;
         // override search action "size" (default = 10) by bulk request size. The size is per shard!
         request.params().put("size", request.param(MAX_BULK_ACTIONS_PER_REQUEST_PARAM, "1000"));
-        searchRequest = RestSearchAction.parseSearchRequest(request);
-        searchRequest.listenerThreaded(false);
+        // set sort to _doc, otherwise scan/scroll will use _score which is vastly inefficient
+        request.params().put("sort", "_doc");
+        SearchRequest searchRequest = new SearchRequest();
+        RestSearchAction.parseSearchRequest(searchRequest, request, parseFieldMatcher, null);
         return searchRequest;
     }
 

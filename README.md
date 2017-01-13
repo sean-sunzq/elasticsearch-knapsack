@@ -1,9 +1,9 @@
-![Knapsack](https://github.com/jprante/elasticsearch-knapsack/raw/master/src/site/resources/knapsack.png)
+![Knapsack](https://github.com/jprante/elasticsearch-knapsack/raw/master/src/site/resources/knapsack.jpg)
 
-Image by [DaPino](http://www.iconarchive.com/show/fishing-equipment-icons-by-dapino/backpack-icon.html) 
-[CC Attribution-Noncommercial 3.0](http://creativecommons.org/licenses/by-nc/3.0/)
+Image by [Rick McCharles](https://www.flickr.com/photos/rickmccharles/3820820609)
+CC BY 2.0 https://creativecommons.org/licenses/by/2.0/
 
-# Elasticsearch Knapsack Plugin
+# Knapsack plugin for Elasticsearch
 
 Knapsack is an "swiss knife" export/import plugin for [Elasticsearch](http://github.com/elasticsearch/elasticsearch).
 It uses archive formats (tar, zip, cpio) and also Elasticsearch bulk format with 
@@ -21,31 +21,40 @@ In archive files, the following index information is encoded:
 
 When importing archive files again, this information is reapplied.
 
-## Versions
+## Compatibility matrix
 
 ![Travis](https://travis-ci.org/jprante/elasticsearch-knapsack.png)
 
 | Elasticsearch  |   Plugin       | Release date |
 | -------------- | -------------- | ------------ |
-| 1.3.2          | 1.3.2.0        | Sep 28, 2014 |
-| 1.2.4          | 1.2.4.0        | Sep 30, 2014 |
-| 1.1.2          | 1.1.2.0        | Sep 30, 2014 |
-| 1.0.3          | 1.0.3.0        | Sep 30, 2014 |
-| 1.2.1          | 1.2.1.0        | Jun 13, 2014 |
-| 1.2.0          | 1.2.0.0        | May 23, 2014 |
-| 1.1.0          | 1.1.0.0        | May 25, 2014 |
-| 1.0.0          | 1.0.0.1        | Feb 16, 2014 |
-| 0.90.11        | 0.90.11.2      | Feb 16, 2014 |
-| 0.20.6         | 0.20.6.2       | Feb 16, 2014 |
-| 0.19.11        | 0.19.11.3      | Feb 15, 2014 |
-| 0.19.8         | 0.19.8.1       | Feb 15, 2014 |
+| 2.3.4          | 2.3.4.0        | Aug  4, 2016 |
+| 2.3.3          | 2.3.3.0        | May 23, 2016 |
+| 2.3.1          | 2.3.1.0        | Apr 21, 2016 |
+| 2.3.0          | 2.3.0.0        | Mar 31, 2016 |
+| 2.2.1          | 2.2.1.0        | Mar 31, 2016 |
+| 2.1.2          | 2.1.2.0        | Mar 23, 2016 |
+| 2.2.0          | 2.2.0.0        | Feb 23, 2016 |
+| 2.1.1          | 2.1.1.0        | Dec 30, 2015 |
+| 2.1.0          | 2.1.0.0        | Dec  7, 2015 |
+| 2.0.0          | 2.0.0.0        | Nov 14, 2015 |
+| 2.0.0-rc1      | 2.0.0-rc1.0    | Oct 12, 2015 |
 
-## Installation
+For older releases and 1.x versions, see the repective branches.
 
-    ./bin/plugin -install knapsack -url http://xbib.org/repository/org/xbib/elasticsearch/plugin/elasticsearch-knapsack/1.3.2.0/elasticsearch-knapsack-1.3.2.0-plugin.zip
+## Installation 2.x
+
+    ./bin/plugin install http://xbib.org/repository/org/xbib/elasticsearch/plugin/elasticsearch-knapsack/2.3.4.0/elasticsearch-knapsack-2.3.4.0-plugin.zip
 
 Do not forget to restart the node after installation.
 
+Note: If you get an error while exporting or importing like this
+
+    {"error":{"root_cause":[{"type":"access_control_exception","reason":"access denied (\"java.io.FilePermission\" \"/foo/bar.zip\" \"read\")"}],"type":"access_control_exception","reason":"access denied (\"java.io.FilePermission\" \"/foo/bar.zip\" \"read\")"},"status":500}
+
+then you are blocked by the Elasticsearch 2.x security manager. In this case, choose another directory for reading/writing archive files, preferably `path.logs`.
+
+It is recommended to add a node with knapsack plugin installed only, no data, no master, and removing the node after the export/import completed.
+ 
 ## Project docs
 
 The Maven project site is available at [Github](http://jprante.github.io/elasticsearch-knapsack)
@@ -67,9 +76,9 @@ Let's go through a simple example:
 You can export this Elasticsearch index with
 
     curl -XPOST localhost:9200/test/test/_export
-    {"running":true,"state":{"mode":"export","started":"2014-09-28T19:18:27.447Z","path":"file:///Users/es/elasticsearch-1.3.2/test_test.tar.gz","node_name":"Slither"}}
+    {"running":true,"state":{"mode":"export","started":"2015-10-12T18:13:47.214Z","path":"file:///Users/es/elasticsearch-2.0.0-rc1/logs/_all.tar.gz","node_name":"Doctor Bong"}}
 
-The result is a file in the Elasticsearch folder
+The result is a file in the Elasticsearch `path.logs` folder
 
     -rw-r--r--   1 joerg  staff          343 28 Sep 21:18 test_test.tar.gz
    
@@ -126,20 +135,28 @@ You can add a query to the `_export` endpoint just like you would do for searchi
        "fields" : [ "_parent", "_source" ]
     }'
 
-## Export to an archive with a given path name
+## Export to an archive with a given archive path name
 
-You can configure an archive path with the parameter `path`
+You can configure an archive path with the parameter `archivepath`
 
-    curl -XPOST 'localhost:9200/test/_export?path=/tmp/myarchive.zip'
+    curl -XPOST 'localhost:9200/test/_export?archivepath=/tmp/myarchive.zip'
 
-If Elasticsearch can not write to the path, an error message will appear, and no export will take place.
-You can force overwrite with the parameter `overwrite=true`
+If Elasticsearch can not write to the archive path, an error message will appear, and no export will take place.
+
+Note: Elasticsearch 2.x has a security manager enabled by default which prevents reading/writing to locations outside of 
+Elasticsearch directories.
+Therefore, the default location for export/import is set to the `path.logs` directory.
+If you prefer to write to or read from any locations, you can disable the security manager by
+
+    ./bin/elasticsearch ... -Dsecurity.manager.enabled=false
+
+Existing archive files are not overwritten. You can force overwrite with the parameter `overwrite=true`
 
 ## Export split by byte size
 
 You can create multiple archive files with the parameter `bytes`
 
-    curl -XPOST 'localhost:9200/test/_export?path=/tmp/myindex.bulk&bytes=10m'
+    curl -XPOST 'localhost:9200/test/_export?archivepath=/tmp/myindex.bulk&bytes=10m'
 
 This creates `myindex.bulk`, `1.myindex.bulk`, `2.myindex.bulk` ... where all archive files are around 10 megabytes.
 
@@ -313,9 +330,40 @@ or
 
     curl -XPOST 'localhost:9200/_import/abort'
 
+# Handing Parent/Child documents
+
+## Exporting 
+
+Handling dependant documents is bit tricky since indexing a child document requires the presence of its parent document. A simple approach is to export the documents into seperate archives by using a query. In case your child documents are located in the same type as the parent documents, define the appropriate filter in the query. If you have stored the child documents in a seperate type, you can export the type containing the parent documents like this:
+
+    curl -XPOST 'localhost:9200/myIndex/myParentDocs/_export?archivepath=/tmp/myIndex_myParentDocs.zip'
+
+When exporting the type containing the child documents, include the "_parent" meta field
+
+    curl -XPOST 'localhost:9200/myIndex/myChildDocs/_export?archivepath=/tmp/myIndex_myChildDocs.zip'' -d '{
+       "query" : {
+           "match_all" : {
+           }
+       },
+       "fields" : [ "_parent", "_source" ]
+    }'
+
+
+## Importing Parent/Child documents
+
+Before you import the parent documents, you have to create the index manually first: Each type export only contains the mapping of that spedific type and you cannot add a dependant mapping in a second step later. All dependant mappings must be created at the same time otherwise you'll get an error like "java.lang.IllegalArgumentException: Can't specify parent if no parent field has been configured". After creating the index, import the parent documents:
+
+    curl -XPOST 'localhost:9200/myIndex/myParentDocs/_import?archivepath=/tmp/myIndex_myParentDocs.zip&createIndex=false'
+
+Then import the child documents:
+
+    curl -XPOST 'localhost:9200/myIndex/myChildDocs/_import?archivepath=/tmp/myIndex_myChildDocs.zip&createIndex=false'
+    
+Repeat this for all your child types.
+
 # Java API
 
-Knapsack implements all actions as Java transport actions in ELasticsearch.
+Knapsack implements all actions as Java transport actions in Elasticsearch.
 
 You can consult the junit tests for finding out how to use the API. To give you an impression, 
 here is just an example for a very minimal export/import cycle using the `bulk` archive format.
@@ -327,7 +375,7 @@ here is just an example for a very minimal export/import cycle using the `bulk` 
         File exportFile = File.createTempFile("minimal-import-", ".bulk");
         Path exportPath = Paths.get(URI.create("file:" + exportFile.getAbsolutePath()));
         KnapsackExportRequestBuilder requestBuilder = new KnapsackExportRequestBuilder(client.admin().indices())
-                .setPath(exportPath)
+                .setArchivePath(exportPath)
                 .setOverwriteAllowed(false);
         KnapsackExportResponse knapsackExportResponse = requestBuilder.execute().actionGet();
 
@@ -340,10 +388,8 @@ here is just an example for a very minimal export/import cycle using the `bulk` 
         client.admin().indices().delete(new DeleteIndexRequest("index1")).actionGet();
 
         KnapsackImportRequestBuilder knapsackImportRequestBuilder = new KnapsackImportRequestBuilder(client.admin().indices())
-                .setPath(exportPath);
+                .setArchivePath(exportPath);
         KnapsackImportResponse knapsackImportResponse = knapsackImportRequestBuilder.execute().actionGet();
-
-
 
 # Caution
 
@@ -367,13 +413,13 @@ from Ant, as far as life in Apache goes. The tar package is originally Tim Endre
 public domain package. The bzip2 package is based on the work done by Keiron Liddle as
  well as Julian Seward's libbzip2. It has migrated via:
 Ant -> Avalon-Excalibur -> Commons-IO -> Commons-Compress.
-The cpio package has been contributed by Michael Kuss and the jRPM project.
+The cpio package is based on contributions of Michael Kuss and the jRPM project.
 
 Thanks to `nicktgr15 <https://github.com/nicktgr15>` for extending Knapsack to support Amazon S3.
 
 # License
 
-Elasticsearch Knapsack Plugin
+Knapsack Plugin for Elasticsearch
 
 Copyright (C) 2012 Jörg Prante
 

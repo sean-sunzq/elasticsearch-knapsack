@@ -26,7 +26,6 @@ import org.elasticsearch.rest.BytesRestResponse;
 import org.elasticsearch.rest.RestChannel;
 import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestRequest;
-
 import org.elasticsearch.rest.action.support.RestToXContentListener;
 import org.xbib.elasticsearch.action.knapsack.imp.KnapsackImportAction;
 import org.xbib.elasticsearch.action.knapsack.imp.KnapsackImportRequest;
@@ -49,7 +48,7 @@ public class RestKnapsackImportAction extends BaseRestHandler implements Knapsac
 
     @Inject
     public RestKnapsackImportAction(Settings settings, Client client, RestController controller) {
-        super(settings, client);
+        super(settings, controller, client);
 
         controller.registerHandler(POST, "/_import", this);
         controller.registerHandler(POST, "/{index}/_import", this);
@@ -61,13 +60,16 @@ public class RestKnapsackImportAction extends BaseRestHandler implements Knapsac
         try {
             final String index = request.param(INDEX_PARAM, "_all");
             final String type = request.param(TYPE_PARAM);
-            final String defaultSpec = index + (type != null ? "_" + type : "") + ".tar.gz";
-            File file = new File(request.param(PATH_PARAM, defaultSpec));
-            final Path path = file.toPath();
+            String archivePathString = request.param(PATH_PARAM);
+            if (archivePathString == null) {
+                String dataPath = settings.get(KnapsackParameter.KNAPSACK_PATH, settings.get(KnapsackParameter.KNAPSACK_DEFAULT_PATH, "."));
+                archivePathString = dataPath + File.separator + index + (type != null ? "_" + type : "") + ".tar.gz";
+            }
+            final Path archivePath = new File(archivePathString).toPath();
             KnapsackImportRequest importRequest = new KnapsackImportRequest()
                     .setIndex(index)
                     .setType(type)
-                    .setPath(path)
+                    .setArchivePath(archivePath)
                     .setTimeout(request.paramAsTime(TIMEOUT_PARAM, TimeValue.timeValueSeconds(30L)))
                     .setMaxActionsPerBulkRequest(request.paramAsInt(MAX_BULK_ACTIONS_PER_REQUEST_PARAM, 1000))
                     .setMaxBulkConcurrency(request.paramAsInt(MAX_BULK_CONCURRENCY_PARAM,
@@ -75,7 +77,7 @@ public class RestKnapsackImportAction extends BaseRestHandler implements Knapsac
                     .withMetadata(request.paramAsBoolean(WITH_METADATA_PARAM, true))
                     .setIndexTypeNames(KnapsackHelper.toMap(request.param(MAP_PARAM), logger));
             // add user-defined settings and mappings
-            for (Map.Entry<String,String> e : request.params().entrySet()) {
+            for (Map.Entry<String, String> e : request.params().entrySet()) {
                 if (e.getKey().endsWith("_settings")) {
                     importRequest.addIndexSettings(e.getKey(), e.getValue());
                 } else if (e.getKey().endsWith("_mapping")) {

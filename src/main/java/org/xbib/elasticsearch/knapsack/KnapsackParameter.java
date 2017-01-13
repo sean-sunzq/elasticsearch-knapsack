@@ -18,11 +18,6 @@ package org.xbib.elasticsearch.knapsack;
 public interface KnapsackParameter {
 
     /**
-     * The knapsack mode: export, import, push or pull
-     */
-    String MODE_PARAM = "mode";
-
-    /**
      * The indices used for knapsack
      */
     String INDEX_PARAM = "index";
@@ -33,9 +28,19 @@ public interface KnapsackParameter {
     String TYPE_PARAM = "type";
 
     /**
-     * The file path for the knapsack archive
+     * The archive file path parameter name for the knapsack archive
      */
-    String PATH_PARAM = "path";
+    String PATH_PARAM = "archivepath";
+
+    /**
+     * The parameter for configuring archive location
+     */
+    String KNAPSACK_PATH = "path.knapsack";
+
+    /**
+     * The default archives are read.written into this path
+     */
+    String KNAPSACK_DEFAULT_PATH = "path.logs";
 
     /**
      * the Elasticsearch host for knapsack push/pull
@@ -87,11 +92,8 @@ public interface KnapsackParameter {
      */
     String WITH_METADATA_PARAM = "with_metadata";
 
-    /**
-     * Should Knapsack encode/decode URI encoded archive entry names
-     */
-    String WITH_ENCODED_ENTRY_PARAM = "with_encoded_entry";
-
     String BYTES_PARAM = "bytes";
+
+    String WITH_ALIASES = "with_aliases";
 
 }

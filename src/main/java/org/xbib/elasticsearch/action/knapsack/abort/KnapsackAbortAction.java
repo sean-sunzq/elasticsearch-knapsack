@@ -12,12 +12,13 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */package org.xbib.elasticsearch.action.knapsack.abort;
+ */
+package org.xbib.elasticsearch.action.knapsack.abort;
 
-import org.elasticsearch.action.admin.indices.IndicesAction;
-import org.elasticsearch.client.IndicesAdminClient;
+import org.elasticsearch.action.Action;
+import org.elasticsearch.client.ElasticsearchClient;
 
-public class KnapsackAbortAction extends IndicesAction<KnapsackAbortRequest, KnapsackAbortResponse, KnapsackAbortRequestBuilder> {
+public class KnapsackAbortAction extends Action<KnapsackAbortRequest, KnapsackAbortResponse, KnapsackAbortRequestBuilder> {
 
     public final static String NAME = "org.xbib.elasticsearch.knapsack.abort";
 
@@ -33,7 +34,7 @@ public class KnapsackAbortAction extends IndicesAction<KnapsackAbortRequest, Kna
     }
 
     @Override
-    public KnapsackAbortRequestBuilder newRequestBuilder(IndicesAdminClient client) {
+    public KnapsackAbortRequestBuilder newRequestBuilder(ElasticsearchClient client) {
         return new KnapsackAbortRequestBuilder(client);
     }
 }

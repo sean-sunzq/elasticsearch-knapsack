@@ -15,31 +15,35 @@
  */
 package org.xbib.elasticsearch.knapsack;
 
+import com.google.common.collect.ImmutableList;
 import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.action.admin.indices.recovery.RecoveryResponse;
+import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.cluster.ClusterService;
-import org.elasticsearch.common.collect.ImmutableList;
-import org.elasticsearch.common.collect.ImmutableList.Builder;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.common.inject.Injector;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
-import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.indices.IndexAlreadyExistsException;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static org.elasticsearch.common.collect.Lists.newArrayList;
 import static org.elasticsearch.common.xcontent.ToXContent.EMPTY_PARAMS;
+import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.common.xcontent.XContentFactory.xContent;
+import static org.elasticsearch.common.xcontent.XContentParser.Token.START_ARRAY;
 import static org.elasticsearch.common.xcontent.XContentParser.Token.END_ARRAY;
 import static org.elasticsearch.common.xcontent.XContentType.JSON;
 
@@ -47,179 +51,216 @@ public class KnapsackService extends AbstractLifecycleComponent<KnapsackService>
 
     private final static ESLogger logger = ESLoggerFactory.getLogger(KnapsackService.class.getSimpleName());
 
-    public static final String EXPORT_STATE_SETTING_NAME = "plugin.knapsack.export.state";
+    public static final String INDEX_NAME = ".knapsack";
 
-    public static final String IMPORT_STATE_SETTING_NAME = "plugin.knapsack.import.state";
+    private static final String MAPPING_NAME = "knapsack";
 
-    private final ClusterService clusterService;
+    private static final String EXPORT_NAME = "export";
+
+    private static final String IMPORT_NAME = "import";
+
+    private final Injector injector;
 
     private ExecutorService executor;
 
     private List<Future<?>> tasks;
 
     @Inject
-    public KnapsackService(Settings settings, ClusterService clusterService) {
+    public KnapsackService(Settings settings, Injector injector) {
         super(settings);
-        this.clusterService = clusterService;
-        this.tasks = newArrayList();
-        this.executor = Executors.newSingleThreadExecutor();
+        this.injector = injector;
     }
 
     @Override
     protected void doStart() throws ElasticsearchException {
+        this.tasks = new ArrayList<>();
+        this.executor = newExecutorService();
     }
 
     @Override
     protected void doStop() throws ElasticsearchException {
-        this.executor.shutdownNow();
-        try {
-            this.executor.awaitTermination(30, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            throw new ElasticsearchException(e.getMessage());
-        }
     }
 
     @Override
     protected void doClose() throws ElasticsearchException {
+        int size = tasks.size();
+        if (size > 0) {
+            for (Future<?> f : tasks) {
+                if (!f.isDone()) {
+                    logger.info("aborting knapsack task {}", f);
+                    boolean b = f.cancel(true);
+                    if (!b) {
+                        logger.error("knapsack task {} could not be cancelled", f);
+                    }
+                }
+            }
+            tasks.clear();
+        }
+        logger.info("knapsack shutdown...");
+        executor.shutdown();
+        try {
+            this.executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            throw new ElasticsearchException(e.getMessage());
+        }
+        if (!executor.isShutdown()) {
+            logger.info("knapsack shutdown now");
+            executor.shutdownNow();
+            try {
+                this.executor.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                throw new ElasticsearchException(e.getMessage());
+            }
+        }
+        logger.info("knapsack shutdown complete");
     }
 
-    public List<KnapsackState> getImports(Client client) throws IOException {
-        return get(IMPORT_STATE_SETTING_NAME);
+    protected ExecutorService newExecutorService() {
+        return Executors.newFixedThreadPool(4);
     }
 
-    public void addImport(Client client, KnapsackState newImport) throws IOException {
-        add(client, IMPORT_STATE_SETTING_NAME, getImports(client), newImport);
+    public List<KnapsackState> getImports() throws IOException {
+        return get(IMPORT_NAME);
     }
 
-    public void removeImport(Client client, KnapsackState targetImport) throws IOException {
-        remove(client, IMPORT_STATE_SETTING_NAME, getImports(client), targetImport);
+    public void addImport(KnapsackState newImport) throws IOException {
+        add(IMPORT_NAME, getImports(), newImport);
     }
 
-    public void updateImport(Client client, KnapsackState targetImport) throws IOException {
-        update(client, IMPORT_STATE_SETTING_NAME, getImports(client), targetImport);
+    public void removeImport(KnapsackState targetImport) throws IOException {
+        remove(IMPORT_NAME, getImports(), targetImport);
     }
 
-    public List<KnapsackState> getExports(Client client) throws IOException {
-        return get(EXPORT_STATE_SETTING_NAME);
+    public List<KnapsackState> getExports() throws IOException {
+        return get(EXPORT_NAME);
     }
 
-    public void addExport(Client client, KnapsackState newExport) throws IOException {
-        add(client, EXPORT_STATE_SETTING_NAME, getExports(client), newExport);
+    public void addExport(KnapsackState newExport) throws IOException {
+        add(EXPORT_NAME, getExports(), newExport);
     }
 
-    public void removeExport(Client client, KnapsackState targetExport) throws IOException {
-        remove(client, EXPORT_STATE_SETTING_NAME, getExports(client), targetExport);
+    public void removeExport(KnapsackState targetExport) throws IOException {
+        remove(EXPORT_NAME, getExports(), targetExport);
     }
 
-    public void updateExport(Client client, KnapsackState targetExport) throws IOException {
-        update(client, EXPORT_STATE_SETTING_NAME, getExports(client), targetExport);
+    private void add(String name, List<KnapsackState> values, KnapsackState targetValue) throws IOException {
+        logger.debug("add: {} -> {}", name, values);
+        if (values == null) {
+            values = Collections.emptyList();
+        }
+        put(name, generate(ImmutableList.<KnapsackState>builder()
+                .addAll(values)
+                .add(targetValue)
+                .build()));
     }
 
-    private List<KnapsackState> get(String name) throws IOException {
-        return parseStates(getClusterSetting(name));
-    }
-
-    private void add(Client client, String name, List<KnapsackState> values, KnapsackState targetValue) throws IOException {
-        logger.info("add: {} -> {}", name, values);
-        updateClusterSettings(client, name, generateSetting(ImmutableList.<KnapsackState>builder()
-                .addAll(values).add(targetValue).build()));
-    }
-
-    private void remove(Client client, String name, List<KnapsackState> values, KnapsackState targetValue) throws IOException {
-        logger.info("remove: {} -> {}", name, values);
-        Builder<KnapsackState> updatedValues = ImmutableList.builder();
+    private void remove(String name, List<KnapsackState> values, KnapsackState targetValue) throws IOException {
+        logger.debug("remove: {} -> {}", name, values);
+        ImmutableList.Builder<KnapsackState> updatedValues = ImmutableList.builder();
         for (KnapsackState value : values) {
             if (!value.equals(targetValue)) {
                 updatedValues.add(value);
             }
         }
-        updateClusterSettings(client, name, generateSetting(updatedValues.build()));
+        put(name, generate(updatedValues.build()));
     }
 
-    private void update(Client client, String name, List<KnapsackState> values, KnapsackState targetValue) throws IOException {
-        Builder<KnapsackState> updatedValues = ImmutableList.builder();
-        for (KnapsackState value : values) {
-            if (value.equals(targetValue)) {
-                updatedValues.add(targetValue);
-            } else {
-                updatedValues.add(value);
+    private List<KnapsackState> get(String name) throws IOException {
+        ImmutableList.Builder<KnapsackState> builder = ImmutableList.builder();
+        try {
+            logger.debug("get knapsack states: {}", name);
+            final Client client = injector.getInstance(Client.class);
+            createIndexIfNotExist(client);
+            GetResponse getResponse = client.prepareGet(INDEX_NAME, MAPPING_NAME, name).execute().actionGet();
+            if (!getResponse.isExists()) {
+                return builder.build();
             }
+            XContentParser parser = xContent(JSON).createParser(getResponse.getSourceAsBytes());
+            while (parser.nextToken() != START_ARRAY) {
+                // forward
+            }
+            while (parser.nextToken() != END_ARRAY) {
+                KnapsackState state = new KnapsackState();
+                builder.add(state.fromXContent(parser));
+            }
+            return builder.build();
+        } catch (Throwable t) {
+            logger.error("get settings failed", t);
+            return null;
         }
-        updateClusterSettings(client, name, generateSetting(updatedValues.build()));
     }
 
-    private String getClusterSetting(String name) {
-        return getClusterSettings().get(name, "[]");
-    }
-
-    private Settings getClusterSettings() {
-        return clusterService.state().getMetaData().transientSettings();
-    }
-
-    private void updateClusterSettings(Client client, String name, String value) {
-        logger.info("update cluster settings: {} -> {}", name, value);
-        client.admin().cluster().prepareUpdateSettings()
-                .setTransientSettings(ImmutableSettings.settingsBuilder()
-                        .put(getClusterSettings())
-                        .put(name, value)
-                        .build())
-                .execute()
-                .actionGet();
-    }
-
-    private static List<KnapsackState> parseStates(String value) throws IOException {
-        XContentParser parser = xContent(JSON).createParser(value);
-        Builder<KnapsackState> builder = ImmutableList.builder();
-        parser.nextToken();
-        while (parser.nextToken() != END_ARRAY) {
-            KnapsackState state = new KnapsackState();
-            builder.add(state.fromXContent(parser));
+    private void put(final String name, final XContentBuilder builder) {
+        try {
+            logger.debug("put knapsack state: {} -> {}", name, builder.string());
+            final Client client = injector.getInstance(Client.class);
+            createIndexIfNotExist(client);
+            client.prepareIndex(INDEX_NAME, MAPPING_NAME, name)
+                    .setSource(builder)
+                    .setRefresh(true)
+                    .execute().actionGet();
+        } catch (Throwable t) {
+            logger.error("update settings failed", t);
         }
-        return builder.build();
     }
 
-    private static String generateSetting(List<KnapsackState> values) throws IOException {
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        builder.startArray();
+    private void remove(final String name) {
+        try {
+            logger.debug("remove: {}", name);
+            final Client client = injector.getInstance(Client.class);
+            createIndexIfNotExist(client);
+            client.prepareDelete(INDEX_NAME, MAPPING_NAME, name)
+                    .setRefresh(true)
+                    .execute().actionGet();
+        } catch (Throwable t) {
+            logger.error("remove failed", t);
+        }
+    }
+
+    private static XContentBuilder generate(List<KnapsackState> values) throws IOException {
+        XContentBuilder builder = jsonBuilder();
+        builder.startObject();
+        builder.startArray("array");
         for (KnapsackState value : values) {
             value.toXContent(builder, EMPTY_PARAMS);
         }
         builder.endArray();
-        return builder.string();
+        builder.endObject();
+        return builder;
+    }
+
+    private void createIndexIfNotExist(Client client) {
+        try {
+            client.admin().indices().prepareCreate(INDEX_NAME).execute().actionGet();
+            RecoveryResponse response = client.admin().indices().prepareRecoveries(INDEX_NAME).execute().actionGet();
+            int shards = response.getTotalShards();
+            client.admin().cluster().prepareHealth(INDEX_NAME)
+                    .setWaitForActiveShards(shards)
+                    .setWaitForYellowStatus()
+                    .execute().actionGet();
+        } catch (IndexAlreadyExistsException e) {
+            // ignore
+        }
     }
 
     public void submit(Runnable runnable) {
+        Iterator<Future<?>> it = tasks.iterator();
+        while (it.hasNext()) {
+            Future<?> f = it.next();
+            if (f.isDone()) {
+                it.remove();
+            }
+        }
         Future<?> f = executor.submit(runnable);
         tasks.add(f);
     }
 
-    public int abort() {
-        int size = tasks.size();
-        logger.info("aborting {} tasks", size);
-        for (Future<?> f : tasks) {
-            boolean b = f.cancel(true);
-            if (!b) {
-                logger.error("task {} could not be cancelled", f);
-            }
+    public void abort(boolean reset) {
+        doClose();
+        this.executor = newExecutorService();
+        if (reset) {
+            remove(EXPORT_NAME);
+            remove(IMPORT_NAME);
         }
-        tasks.clear();
-        logger.info("shutdown");
-        executor.shutdown();
-        try {
-            this.executor.awaitTermination(5, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            throw new ElasticsearchException(e.getMessage());
-        }
-        logger.info("shutdown now");
-        List<Runnable> runnables = executor.shutdownNow();
-        try {
-            this.executor.awaitTermination(5, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            throw new ElasticsearchException(e.getMessage());
-        }
-        logger.info("task queue size was {}, setting new executor", runnables.size());
-        this.executor = Executors.newSingleThreadExecutor();
-        return size;
     }
-
 }

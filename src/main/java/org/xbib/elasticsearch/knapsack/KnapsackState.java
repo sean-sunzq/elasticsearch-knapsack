@@ -20,18 +20,20 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Streamable;
 import org.elasticsearch.common.joda.DateMathParser;
 import org.elasticsearch.common.joda.Joda;
-import org.elasticsearch.common.joda.time.DateTime;
+import org.elasticsearch.common.logging.ESLogger;
+import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.common.xcontent.XContentParser.Token;
+import org.joda.time.DateTime;
 
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Callable;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.common.xcontent.XContentParser.Token.END_OBJECT;
@@ -114,34 +116,51 @@ public class KnapsackState implements Streamable, ToXContent {
         return nodeName;
     }
 
+    private static Callable<Long> now() {
+        return new Callable<Long>() {
+            @Override
+            public Long call() {
+                return 0L;
+            }
+        };
+    }
+
+    private final static DateMathParser dateParser = new DateMathParser(Joda.forPattern("dateOptionalTime"));
+
+    private final static ESLogger logger = ESLoggerFactory.getLogger("state");
+
     public KnapsackState fromXContent(XContentParser parser) throws IOException {
-        DateMathParser dateParser = new DateMathParser(Joda.forPattern("dateOptionalTime"), TimeUnit.MILLISECONDS);
         Long startTimestamp = new Date().getTime();
         Path path = null;
         String address = null;
         String nodeName = null;
         String currentFieldName = null;
         Token token;
-        while ((token = parser.nextToken()) != END_OBJECT) {
-            if (token == FIELD_NAME) {
+        while ((token = parser.nextToken()) != null) {
+            if (token == END_OBJECT) {
+                break;
+            }
+            else if (token == FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token.isValue() || token == VALUE_NULL) {
-                switch (currentFieldName) {
-                    case "mode":
-                        mode = parser.text();
-                        break;
-                    case "started":
-                        startTimestamp = parser.text() != null ? dateParser.parse(parser.text(), 0) : null;
-                        break;
-                    case "path":
-                        path = parser.text() != null ? Paths.get(URI.create(parser.text())) : null;
-                        break;
-                    case "cluster_address":
-                        address = parser.text();
-                        break;
-                    case "node_name":
-                        nodeName = parser.text();
-                        break;
+                if (currentFieldName != null) {
+                    switch (currentFieldName) {
+                        case "mode":
+                            mode = parser.text();
+                            break;
+                        case "started":
+                            startTimestamp = parser.text() != null ? dateParser.parse(parser.text(), now()) : null;
+                            break;
+                        case "path":
+                            path = parser.text() != null ? Paths.get(URI.create(parser.text())) : null;
+                            break;
+                        case "cluster_address":
+                            address = parser.text();
+                            break;
+                        case "node_name":
+                            nodeName = parser.text();
+                            break;
+                    }
                 }
             }
         }
@@ -176,10 +195,10 @@ public class KnapsackState implements Streamable, ToXContent {
     public String id() {
         StringBuilder sb = new StringBuilder();
         sb.append(mode)
-            .append(timestamp)
-            .append(path)
-            .append(address)
-            .append(nodeName);
+                .append(timestamp)
+                .append(path)
+                .append(address)
+                .append(nodeName);
         return sb.toString();
     }
 

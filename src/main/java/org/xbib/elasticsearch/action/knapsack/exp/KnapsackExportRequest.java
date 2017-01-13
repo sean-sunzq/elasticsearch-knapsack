@@ -15,8 +15,9 @@
  */
 package org.xbib.elasticsearch.action.knapsack.exp;
 
+import org.elasticsearch.action.ActionRequest;
+import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.support.single.custom.SingleCustomOperationRequest;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.unit.ByteSizeValue;
@@ -27,22 +28,19 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Map;
 
-import static org.elasticsearch.common.collect.Maps.newHashMap;
-
-public class KnapsackExportRequest extends SingleCustomOperationRequest<KnapsackExportRequest>
+public class KnapsackExportRequest extends ActionRequest<KnapsackExportRequest>
         implements KnapsackRequest {
 
-    private Path path;
+    private Path archivePath;
 
     private TimeValue timeout;
 
     private int limit;
 
-    private Map<String, Object> indexTypeNames = newHashMap();
-
-    private boolean withMetadata;
+    private Map<String, Object> indexTypeNames = new HashMap<>();
 
     private String index = "_all";
 
@@ -50,11 +48,13 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
 
     private SearchRequest searchRequest;
 
+    private boolean withMetadata;
+
     private boolean overwrite;
 
-    private boolean encodeEntry;
+    private boolean withAliases;
 
-    private ByteSizeValue bytesToTransfer = ByteSizeValue.parseBytesSizeValue("0");
+    private ByteSizeValue bytesToTransfer = ByteSizeValue.parseBytesSizeValue("0", "");
 
     public String getCluster() {
         return null;
@@ -76,13 +76,13 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         return false;
     }
 
-    public KnapsackExportRequest setPath(Path path) {
-        this.path = path;
+    public KnapsackExportRequest setArchivePath(Path archivePath) {
+        this.archivePath = archivePath;
         return this;
     }
 
-    public Path getPath() {
-        return path;
+    public Path getArchivePath() {
+        return archivePath;
     }
 
     public KnapsackExportRequest setIndex(String index) {
@@ -112,22 +112,13 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         return limit;
     }
 
-    public KnapsackExportRequest setIndexTypeNames(Map indexTypeNames) {
+    public KnapsackExportRequest setIndexTypeNames(Map<String, Object> indexTypeNames) {
         this.indexTypeNames = indexTypeNames;
         return this;
     }
 
     public Map<String, Object> getIndexTypeNames() {
         return indexTypeNames;
-    }
-
-    public KnapsackExportRequest withMetadata(boolean withMetadata) {
-        this.withMetadata = withMetadata;
-        return this;
-    }
-
-    public boolean withMetadata() {
-        return withMetadata;
     }
 
     public KnapsackExportRequest setSearchRequest(SearchRequest searchRequest) {
@@ -139,23 +130,6 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         return searchRequest;
     }
 
-    public KnapsackExportRequest setOverwriteAllowed(boolean overwrite) {
-        this.overwrite = overwrite;
-        return this;
-    }
-
-    public boolean isOverwriteAllowed() {
-        return overwrite;
-    }
-
-    public KnapsackExportRequest setEncodeEntry(boolean encodeEntry) {
-        this.encodeEntry = encodeEntry;
-        return this;
-    }
-
-    public boolean isEncodeEntry() {
-        return encodeEntry;
-    }
 
     public KnapsackExportRequest setBytesToTransfer(ByteSizeValue bytesToTransfer) {
         this.bytesToTransfer = bytesToTransfer;
@@ -166,10 +140,37 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         return bytesToTransfer;
     }
 
+    public KnapsackExportRequest withMetadata(boolean withMetadata) {
+        this.withMetadata = withMetadata;
+        return this;
+    }
+
+    public boolean isWithMetadata() {
+        return withMetadata;
+    }
+
+    public KnapsackExportRequest setOverwriteAllowed(boolean overwrite) {
+        this.overwrite = overwrite;
+        return this;
+    }
+
+    public boolean isOverwriteAllowed() {
+        return overwrite;
+    }
+
+    public KnapsackExportRequest withAliases(boolean withAliases) {
+        this.withAliases = withAliases;
+        return this;
+    }
+
+    public boolean isWithAliases() {
+        return withAliases;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeString(path.toUri().toString());
+        out.writeString(archivePath.toUri().toString());
         if (timeout != null) {
             out.writeBoolean(true);
             timeout.writeTo(out);
@@ -180,7 +181,7 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         out.writeMap(indexTypeNames);
         out.writeBoolean(withMetadata);
         out.writeBoolean(overwrite);
-        out.writeBoolean(encodeEntry);
+        out.writeBoolean(withAliases);
         out.writeString(index);
         out.writeString(type);
         if (searchRequest != null) {
@@ -193,9 +194,14 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
     }
 
     @Override
+    public ActionRequestValidationException validate() {
+        return null;
+    }
+
+    @Override
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
-        path = Paths.get(URI.create(in.readString()));
+        archivePath = Paths.get(URI.create(in.readString()));
         if (in.readBoolean()) {
             timeout = TimeValue.readTimeValue(in);
         }
@@ -203,7 +209,7 @@ public class KnapsackExportRequest extends SingleCustomOperationRequest<Knapsack
         indexTypeNames = in.readMap();
         withMetadata = in.readBoolean();
         overwrite = in.readBoolean();
-        encodeEntry = in.readBoolean();
+        withAliases = in.readBoolean();
         index = in.readString();
         type = in.readString();
         if (in.readBoolean()) {
